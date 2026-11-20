@@ -137,6 +137,10 @@ body.lock{overflow:hidden}
     <input id="r-price" inputmode="numeric" autocomplete="off">
     <div class="chips" id="c-price"></div>
     <div class="sw"><span class="muted">후기 및 피드백 링크 포함</span><input type="checkbox" id="r-fb" checked></div>
+    <div id="r-fbwarn" style="display:none;margin-top:10px;padding:12px;border-radius:12px;background:#fdecea;color:#a3271d;font-size:14px">
+      후기 링크 주소가 아직 설정되지 않아 접수증에 링크가 빠집니다.<br>⚙ 설정 → <b>Apps Script 웹앱 URL</b> 입력 후 <b>설정 저장</b>을 눌러 주세요.
+      <button type="button" class="btn ghost" id="r-fbgo" style="margin-top:8px;min-height:44px;padding:10px;font-size:15px">설정으로 이동</button>
+    </div>
   </div>
   <div class="card">
     <h2>미리보기</h2>
@@ -335,7 +339,9 @@ function chips(box,list,input,onPick){
   $(box).innerHTML=list.map((o,i)=>`<button type="button" class="chip${o.v===cur&&!o.sub?' on':''}" data-i="${i}">${esc(o.label||o.v)}${o.sub?`<small>${esc(o.sub)}</small>`:''}</button>`).join('');
   $(box).querySelectorAll('.chip').forEach(b=>b.onclick=()=>{const o=list[b.dataset.i];if(onPick)onPick(o);else $(input).value=o.v;renderReceipt()});
 }
+function fbWarn(){$('r-fbwarn').style.display=$('r-fb').checked&&!fbUrl('0000')?'block':'none'}
 function renderReceipt(){
+  fbWarn();
   markSaved(lastSig&&lastSig===formSig());
   const q=$('r-name').value.trim(),ph=digits($('r-phone').value),m=matchCust();
   // 이름 칩: 입력한 이름/번호로 검색 (일치 고객이 확정되면 숨김)
@@ -351,16 +357,18 @@ function renderReceipt(){
   chips('c-price',prices.map(p=>({v:Number(p).toLocaleString('ko-KR'),label:won(p)})),'r-price');
   $('preview').textContent=buildText();
 }
-function buildText(){
-  const s=S.settings,name=$('r-name').value.trim(),c=matchCust();
+function buildText(code){
+  const s=S.settings,name=$('r-name').value.trim(),c=matchCust();code=code||(c&&c.code);
   const price=won($('r-price').value),L='ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ';
   let t=`${s.acc} ${s.bank}\n${s.holder}\n\n${price}\n${L}\n${dot($('r-date').value)}\n\n`+
     `성함 : ${name}\n라켓종류 : ${$('r-racket').value.trim()}\n스트링종류 : ${$('r-string').value.trim()}\n`+
     `텐션 : ${$('r-tension').value.trim()}\n${getHand()?`주손 : ${getHand()}\n`:''}금액 : ${price}\n${L}`;
-  if($('r-fb').checked){const u=fbUrl(c?c.code:'(신규코드)');if(u) t+=`\n후기 및 피드백 : ${u}`}
+  if($('r-fb').checked){const u=code?fbUrl(code):fbUrl('NEWCODE').replace('NEWCODE','(저장 시 코드 발급)');if(u) t+=`\n후기 및 피드백 : ${u}`}
   return t;
 }
-['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{$('preview').textContent=buildText();markSaved(lastSig&&lastSig===formSig())}));
+$('r-fb').addEventListener('change',()=>{fbWarn();$('preview').textContent=buildText()});
+$('r-fbgo').onclick=()=>show('settings');
+['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{fbWarn();$('preview').textContent=buildText();markSaved(lastSig&&lastSig===formSig())}));
 // 성함 입력 → 기존 고객이면 연락처 자동 선택
 $('r-name').addEventListener('input',()=>{
   const name=$('r-name').value.trim(),same=S.customers.filter(c=>c.name===name);
@@ -423,7 +431,6 @@ function commit(){
   const name=$('r-name').value.trim(),phone=fmtPhone($('r-phone').value);
   if(!name){toast('성함을 입력하세요');$('r-name').focus();return null}
   if(!$('r-racket').value.trim()||!$('r-string').value.trim()){toast('라켓·스트링을 선택하세요');return null}
-  const text=buildText();
   let c=matchCust(),isNew=false;
   if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
   else if(phone&&!c.phone) c.phone=phone;
@@ -435,7 +442,7 @@ function commit(){
   S.receipts.unshift(r);save();
   sync({type:'receipt',receipt:r,customer:c});
   if(isNew) toast('신규 고객 등록: '+c.code);
-  lastText=isNew?text.replace('(신규코드)',encodeURIComponent(c.code)):text;
+  lastText=buildText(c.code);
   lastSig=formSig();markSaved(true);$('preview').textContent=lastText;
   return lastText;
 }
@@ -517,6 +524,7 @@ $('it-add').onclick=addItem;$('it-in').addEventListener('keydown',e=>{if(e.key==
 // ---------- 설정 ----------
 function renderSettings(){const s=S.settings;$('s-acc').value=s.acc;$('s-bank').value=s.bank;$('s-holder').value=s.holder;
   $('s-price').value=s.price;$('s-gas').value=s.gas;$('s-fb').value=s.fb}
+['s-gas','s-fb'].forEach(id=>$(id).addEventListener('change',()=>{S.settings.gas=$('s-gas').value.trim();S.settings.fb=$('s-fb').value.trim();save();toast('후기 링크 저장됨')}));
 $('s-save').onclick=()=>{const s=S.settings;s.acc=$('s-acc').value.trim();s.bank=$('s-bank').value.trim();s.holder=$('s-holder').value.trim();
   s.price=Number($('s-price').value.replace(/[^\d]/g,''))||0;s.gas=$('s-gas').value.trim();s.fb=$('s-fb').value.trim();save();toast('설정 저장됨')};
 $('s-exp').onclick=()=>{
