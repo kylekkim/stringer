@@ -82,6 +82,10 @@ h2{font-size:17px;margin:4px 0 10px}
 .sh-it small{color:var(--sub);font-size:13px}
 .sh-it.add{color:var(--court2);font-weight:700}
 body.lock{overflow:hidden}
+.seg{display:flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.seg button{border:0;background:#fff;font:inherit;font-size:15px;padding:0 14px;min-height:49px;color:var(--sub)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--court);color:#fff;font-weight:700}
 </style>
 </head>
 <body>
@@ -120,8 +124,14 @@ body.lock{overflow:hidden}
     <div class="pick"><input id="r-racket" placeholder="터치해서 선택" readonly></div>
     <label class="f" for="r-string">스트링종류</label>
     <div class="pick"><input id="r-string" placeholder="터치해서 선택" readonly></div>
-    <label class="f" for="r-tension">텐션 (메인/크로스)</label>
-    <input id="r-tension" placeholder="예: 46/44" inputmode="text" autocomplete="off">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1"><label class="f" for="r-tension">텐션 (메인/크로스)</label>
+      <input id="r-tension" placeholder="예: 46/44" inputmode="text" autocomplete="off"></div>
+      <div style="flex:0 0 auto"><label class="f">주손</label>
+      <div class="seg" id="r-hand" role="radiogroup" aria-label="주손">
+        <button type="button" data-h="오른손" role="radio">오른손</button><button type="button" data-h="왼손" role="radio">왼손</button>
+      </div></div>
+    </div>
     <div class="chips" id="c-tension"></div>
     <label class="f" for="r-price">금액 (원)</label>
     <input id="r-price" inputmode="numeric" autocomplete="off">
@@ -149,6 +159,8 @@ body.lock{overflow:hidden}
     <div class="muted">고객코드 <span class="code" id="cd-code"></span></div>
     <label class="f" for="cd-name">성함</label><input id="cd-name">
     <label class="f" for="cd-phone">연락처</label><input id="cd-phone" inputmode="tel" placeholder="선택">
+    <label class="f">주손</label>
+    <div class="seg" id="cd-hand" style="width:max-content"><button type="button" data-h="오른손">오른손</button><button type="button" data-h="왼손">왼손</button></div>
     <label class="f" for="cd-memo">메모</label><textarea id="cd-memo" rows="2" placeholder="선호 텐션, 특이사항 등"></textarea>
     <button class="btn" id="cd-save">저장</button>
   </div>
@@ -245,16 +257,30 @@ function sync(payload){
 
 // ---------- 화면 이동 ----------
 const TITLES={home:'스트링 접수',receipt:'접수증 보내기',customers:'고객관리',customer:'고객 정보',items:'',settings:'설정'};
-let stack=['home'],itemKind='strings',curCust=null;
+let itemKind='strings',curCust=null,curView='home';
+// 폰 뒤로가기 버튼이 앱 안의 이전 화면으로 가도록 브라우저 기록(history) 사용
 function show(v,push=true){
-  if(push&&stack[stack.length-1]!==v) stack.push(v);
+  if(push&&v!==curView) history.pushState({v,kind:itemKind,cust:curCust},'');
+  curView=v;
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
   $('ttl').textContent=v==='items'?(itemKind==='strings'?'스트링종류':'라켓종류'):TITLES[v];
   $('back').style.visibility=v==='home'?'hidden':'visible';
   window.scrollTo(0,0);
   ({home:renderHome,receipt:renderReceipt,customers:renderCustomers,customer:renderCustomer,items:renderItems,settings:renderSettings})[v]();
 }
-$('back').onclick=()=>{stack.pop();show(stack[stack.length-1]||'home',false)};
+$('back').onclick=()=>history.back();
+let exitArmed=0;
+window.addEventListener('popstate',e=>{
+  if($('pk-bg').classList.contains('on')){closePicker(true);return}   // 목록 창 열려 있으면 창만 닫기
+  const st=e.state||{};
+  if(st.root){                                                          // 메인에서 뒤로가기 → 종료 확인
+    if(Date.now()-exitArmed<2000){history.back();return}
+    exitArmed=Date.now();toast('한 번 더 누르면 종료됩니다');
+    history.pushState({v:'home'},'');show('home',false);return;
+  }
+  if(st.kind)itemKind=st.kind;if(st.cust!==undefined)curCust=st.cust;
+  show(st.v||'home',false);
+});
 $('gear').onclick=()=>show('settings');
 document.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{
   const g=b.dataset.go;
@@ -284,13 +310,14 @@ function matchCust(){
 }
 function resetReceipt(code){
   $('r-date').value=ymd(new Date());
-  ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');
+  ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');setHand('');
   $('r-price').value=Number(S.settings.price).toLocaleString('ko-KR');
   if(code) fillFromCustomer(S.customers.find(c=>c.code===code));
 }
 function fillFromCustomer(c){
   if(!c)return;
   $('r-name').value=c.name;$('r-phone').value=c.phone||'';
+  if(!getHand()&&c.hand)setHand(c.hand);
   const last=S.receipts.find(r=>r.code===c.code);if(!last)return;
   // 이미 고른 값은 유지하고 빈 칸만 지난번 값으로 채움
   [['racket','racket'],['string','string'],['tension','tension']].forEach(([f,k])=>{if(!$('r-'+f).value.trim())$('r-'+f).value=last[k]||''});
@@ -345,14 +372,24 @@ $('r-phone').addEventListener('input',()=>{
 });
 $('r-price').addEventListener('blur',()=>{const n=Number($('r-price').value.replace(/[^\d]/g,''));if(n)$('r-price').value=n.toLocaleString('ko-KR');renderReceipt()});
 
+const getHand=()=>($('r-hand').querySelector('.on')||{}).dataset?.h||'';
+function setHand(h){$('r-hand').querySelectorAll('button').forEach(b=>{const on=b.dataset.h===h;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)})}
+$('r-hand').querySelectorAll('button').forEach(b=>b.onclick=()=>setHand(b.classList.contains('on')?'':b.dataset.h));
+
 // ---------- 터치 목록 선택 (라켓/스트링) ----------
 let pkField=null;
 function openPicker(field){
   pkField=field;$('pk-ttl').textContent=field==='racket'?'라켓종류 선택':'스트링종류 선택';
   $('pk-q').value='';renderPicker();$('pk-bg').classList.add('on');document.body.classList.add('lock');
   $('pk-list').scrollTop=0;
+  history.pushState({v:curView,pk:1},'');
 }
-function closePicker(){$('pk-bg').classList.remove('on');document.body.classList.remove('lock')}
+// fromPop: 폰 뒤로가기로 닫힌 경우. 그 외(선택·닫기 버튼)는 기록을 한 칸 되돌려 맞춤
+function closePicker(fromPop){
+  if(!$('pk-bg').classList.contains('on'))return;
+  $('pk-bg').classList.remove('on');document.body.classList.remove('lock');
+  if(!fromPop)history.back();
+}
 function renderPicker(){
   const saved=S[pkField==='racket'?'rackets':'strings'],cur=$('r-'+pkField).value.trim();
   const q=$('pk-q').value.trim(),ql=q.toLowerCase(),hit=v=>!q||v.toLowerCase().includes(ql);
@@ -371,7 +408,7 @@ function renderPicker(){
 ['racket','string'].forEach(f=>$('r-'+f).addEventListener('click',()=>openPicker(f)));
 $('pk-q').addEventListener('input',renderPicker);
 $('pk-q').addEventListener('keydown',e=>{if(e.key==='Enter'){const q=$('pk-q').value.trim();if(q){$('r-'+pkField).value=q;closePicker();renderReceipt()}}});
-$('pk-close').onclick=closePicker;
+$('pk-close').onclick=()=>closePicker();
 $('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()});
 
 function commit(){
@@ -383,8 +420,8 @@ function commit(){
   if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
   else if(phone&&!c.phone) c.phone=phone;
   const r={id:uid(),date:$('r-date').value,code:c.code,name,racket:$('r-racket').value.trim(),string:$('r-string').value.trim(),
-    tension:$('r-tension').value.trim(),price:Number($('r-price').value.replace(/[^\d]/g,''))||0};
-  c.last=r.date;
+    tension:$('r-tension').value.trim(),hand:getHand(),price:Number($('r-price').value.replace(/[^\d]/g,''))||0};
+  c.last=r.date;if(r.hand)c.hand=r.hand;
   if(r.racket&&!S.rackets.includes(r.racket)) S.rackets.push(r.racket);
   if(r.string&&!S.strings.includes(r.string)) S.strings.push(r.string);
   S.receipts.unshift(r);save();
@@ -422,11 +459,12 @@ $('cs-add').onclick=()=>{
 };
 function renderCustomer(){
   const c=S.customers.find(x=>x.code===curCust);if(!c){show('customers');return}
-  $('cd-code').textContent=c.code;$('cd-name').value=c.name;$('cd-phone').value=c.phone||'';$('cd-memo').value=c.memo||'';
+  $('cd-code').textContent=c.code;
+  $('cd-hand').querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.h===c.hand));$('cd-name').value=c.name;$('cd-phone').value=c.phone||'';$('cd-memo').value=c.memo||'';
   const u=fbUrl(c.code);$('cd-fb').textContent=u||'설정에서 Apps Script URL을 입력하면 고객별 후기 링크가 만들어집니다.';
   const h=S.receipts.filter(r=>r.code===c.code);
   $('cd-hist').innerHTML='<h2>접수 내역 '+h.length+'건</h2>'+(h.length?h.map(r=>
-    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.price))}</b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
+    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.price))}</b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}${r.hand?' / '+esc(r.hand):''}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
   $('cd-hist').querySelectorAll('.x').forEach(b=>b.onclick=()=>{
     if(b.dataset.ok){S.receipts=S.receipts.filter(r=>r.id!==b.dataset.id);save();sync({type:'deleteReceipt',id:b.dataset.id});renderCustomer()}
     else{b.dataset.ok=1;b.textContent='한번 더'}});
@@ -438,16 +476,17 @@ $('cd-save').onclick=()=>{
   if(ph&&S.customers.some(x=>x.code!==c.code&&digits(x.phone)===ph)){toast('같은 연락처의 고객이 이미 있습니다');return}
   if(!ph&&S.customers.some(x=>x.name===nm&&x.code!==c.code&&!x.phone)){toast('같은 이름이 있어요. 연락처를 입력해 구분하세요');return}
   if(c.name!==nm) S.receipts.forEach(r=>{if(r.code===c.code)r.name=nm});
-  c.name=nm;c.phone=fmtPhone($('cd-phone').value);c.memo=$('cd-memo').value.trim();save();
+  c.name=nm;c.phone=fmtPhone($('cd-phone').value);c.hand=($('cd-hand').querySelector('.on')||{dataset:{}}).dataset.h||'';c.memo=$('cd-memo').value.trim();save();
   sync({type:'customer',customer:c});toast('저장됨');
 };
 $('cd-phone').addEventListener('input',()=>{const e=$('cd-phone'),f=fmtPhone(e.value);if(e.value!==f)e.value=f});
+$('cd-hand').querySelectorAll('button').forEach(b=>b.onclick=()=>{const was=b.classList.contains('on');$('cd-hand').querySelectorAll('button').forEach(x=>x.classList.remove('on'));if(!was)b.classList.add('on')});
 $('cd-fbcopy').onclick=async()=>{const u=fbUrl(curCust);if(!u){toast('후기 링크 설정이 없습니다');return}await copyText(u);toast('링크 복사됨')};
 $('cd-new').onclick=()=>{resetReceipt(curCust);show('receipt')};
 $('cd-del').onclick=function(){
   if(!this.dataset.ok){this.dataset.ok=1;this.textContent='정말 삭제할까요? (한번 더 누르기)';return}
   S.customers=S.customers.filter(x=>x.code!==curCust);save();this.dataset.ok='';this.textContent='고객 삭제';
-  toast('삭제됨 (접수 내역은 보관)');stack.pop();show('customers',false);
+  toast('삭제됨 (접수 내역은 보관)');history.back();
 };
 
 // ---------- 스트링/라켓 ----------
@@ -480,6 +519,7 @@ $('s-imp').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>
   try{const d=JSON.parse(t);if(!d.customers||!d.receipts)throw 0;S=d;for(const k in DEF)if(S[k]===undefined)S[k]=structuredClone(DEF[k]);save();toast('복원 완료');show('home')}
   catch(x){toast('백업 파일이 올바르지 않습니다')}})};
 
+history.replaceState({root:1},'');history.pushState({v:'home'},'');
 show('home',false);
 }
 </script>
