@@ -58,6 +58,30 @@ pre.receipt{white-space:pre-wrap;word-break:break-all;font:15px/1.6 Pretendard,s
 h2{font-size:17px;margin:4px 0 10px}
 .sw{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
 .sw input{width:auto;transform:scale(1.4)}
+.pick{position:relative}
+.pick input{padding-right:40px;cursor:pointer;background:#fff}
+.pick::after{content:"▾";position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--sub);pointer-events:none}
+.pick input:placeholder-shown{color:var(--sub)}
+.sheet-bg{position:fixed;inset:0;background:rgba(10,20,35,.45);z-index:30;display:none}
+.sheet-bg.on{display:block}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-width:560px;margin:0 auto;background:#fff;border-radius:20px 20px 0 0;
+  max-height:78vh;display:flex;flex-direction:column;padding:8px 16px calc(12px + env(safe-area-inset-bottom));animation:up .2s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+.sheet .grab{width:40px;height:5px;border-radius:3px;background:#d5dbe3;margin:4px auto 10px}
+.sh-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sh-head b{font-size:18px}
+.sh-head button{background:none;border:0;font:inherit;color:var(--court2);font-weight:700;min-height:44px;padding:0 6px}
+.sh-list{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin-top:8px;flex:1}
+.sh-sec{font-size:13px;font-weight:700;color:var(--sub);padding:12px 4px 4px}
+.sh-it{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);
+  font:inherit;font-size:16px;color:var(--ink);padding:14px 4px;min-height:52px}
+.sh-it:active{background:#f1f5fa}
+.sh-it.on{color:var(--court2);font-weight:700}
+.sh-it.on::after{content:"✓"}
+.sh-it small{color:var(--sub);font-size:13px}
+.sh-it.add{color:var(--court2);font-weight:700}
+body.lock{overflow:hidden}
 </style>
 </head>
 <body>
@@ -84,15 +108,18 @@ h2{font-size:17px;margin:4px 0 10px}
   <div class="card">
     <label class="f" for="r-date">날짜</label>
     <input id="r-date" type="date">
-    <label class="f" for="r-name">성함</label>
-    <input id="r-name" placeholder="고객 이름 (검색 또는 직접입력)" autocomplete="off">
+    <div class="row">
+      <div style="flex:1"><label class="f" for="r-name">성함</label>
+      <input id="r-name" placeholder="고객 이름" autocomplete="off"></div>
+      <div style="flex:1.2"><label class="f" for="r-phone">연락처</label>
+      <input id="r-phone" placeholder="010-0000-0000" inputmode="tel" autocomplete="off"></div>
+    </div>
+    <div class="muted" id="r-who" style="margin-top:6px"></div>
     <div class="chips" id="c-name"></div>
     <label class="f" for="r-racket">라켓종류</label>
-    <input id="r-racket" placeholder="선택하거나 직접입력" autocomplete="off">
-    <div class="chips" id="c-racket"></div>
+    <div class="pick"><input id="r-racket" placeholder="터치해서 선택" readonly></div>
     <label class="f" for="r-string">스트링종류</label>
-    <input id="r-string" placeholder="선택하거나 직접입력" autocomplete="off">
-    <div class="chips" id="c-string"></div>
+    <div class="pick"><input id="r-string" placeholder="터치해서 선택" readonly></div>
     <label class="f" for="r-tension">텐션 (메인/크로스)</label>
     <input id="r-tension" placeholder="예: 46/44" inputmode="text" autocomplete="off">
     <div class="chips" id="c-tension"></div>
@@ -175,6 +202,14 @@ h2{font-size:17px;margin:4px 0 10px}
 
 </main>
 <div class="toast" id="toast"></div>
+<div class="sheet-bg" id="pk-bg">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pk-ttl">
+    <div class="grab"></div>
+    <div class="sh-head"><b id="pk-ttl"></b><button type="button" id="pk-close">닫기</button></div>
+    <input id="pk-q" placeholder="검색 또는 새 이름 직접입력" autocomplete="off">
+    <div class="sh-list" id="pk-list"></div>
+  </div>
+</div>
 
 <script>
 {
@@ -198,7 +233,6 @@ let tt;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on'
 // 고객코드: 추측하기 어려운 6자리 (혼동 문자 제외)
 function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c;
   do{c='K'+Array.from({length:5},()=>A[Math.floor(Math.random()*A.length)]).join('')}while(S.customers.some(x=>x.code===c));return c}
-const findCust=name=>S.customers.find(c=>c.name===name.trim());
 function fbUrl(code){
   if(S.settings.gas) return S.settings.gas.trim()+'?code='+encodeURIComponent(code);
   if(S.settings.fb) return S.settings.fb.includes('{code}')?S.settings.fb.replace(/\{code\}/g,encodeURIComponent(code)):S.settings.fb;
@@ -235,44 +269,60 @@ function renderHome(){
 }
 
 // ---------- 접수증 ----------
-const F=['date','name','racket','string','tension','price'];
-function resetReceipt(pre){
+const digits=s=>String(s||'').replace(/[^\d]/g,'');
+function fmtPhone(s){const d=digits(s).slice(0,11);
+  if(d.length<4)return d;if(d.length<8)return d.slice(0,3)+'-'+d.slice(3);
+  return d.length===11?d.slice(0,3)+'-'+d.slice(3,7)+'-'+d.slice(7):d.slice(0,3)+'-'+d.slice(3,6)+'-'+d.slice(6)}
+// 현재 입력된 성함/연락처로 고객 찾기: 연락처가 있으면 연락처 우선
+function matchCust(){
+  const name=$('r-name').value.trim(),ph=digits($('r-phone').value);
+  if(ph.length>=10){const c=S.customers.find(x=>digits(x.phone)===ph);if(c)return c}
+  const same=S.customers.filter(x=>x.name===name);
+  if(same.length===1&&(!ph||!same[0].phone||digits(same[0].phone)===ph))return same[0];
+  if(same.length>1&&ph)return same.find(x=>digits(x.phone)===ph)||null;
+  return null;
+}
+function resetReceipt(code){
   $('r-date').value=ymd(new Date());
-  ['name','racket','string','tension'].forEach(k=>$('r-'+k).value='');
+  ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');
   $('r-price').value=Number(S.settings.price).toLocaleString('ko-KR');
-  if(pre) fillFromCustomer(pre);
+  if(code) fillFromCustomer(S.customers.find(c=>c.code===code));
 }
-function fillFromCustomer(name){
-  $('r-name').value=name;
-  const last=S.receipts.find(r=>r.name===name);
-  if(last){$('r-racket').value=last.racket;$('r-string').value=last.string;$('r-tension').value=last.tension;$('r-price').value=Number(last.price).toLocaleString('ko-KR')}
+function fillFromCustomer(c){
+  if(!c)return;
+  $('r-name').value=c.name;$('r-phone').value=c.phone||'';
+  const last=S.receipts.find(r=>r.code===c.code);if(!last)return;
+  // 이미 고른 값은 유지하고 빈 칸만 지난번 값으로 채움
+  [['racket','racket'],['string','string'],['tension','tension']].forEach(([f,k])=>{if(!$('r-'+f).value.trim())$('r-'+f).value=last[k]||''});
+  $('r-price').value=Number(last.price).toLocaleString('ko-KR');
 }
-// 최근 사용 순 + 저장 목록 병합
+function recentVals(field){return [...new Set(S.receipts.map(r=>r[field]).filter(Boolean))]}
 function opts(field,saved){
-  const seen=new Map();
-  S.receipts.forEach(r=>{const v=r[field];if(v)seen.set(v,(seen.get(v)||0)+1)});
-  const recent=[...new Set(S.receipts.map(r=>r[field]).filter(Boolean))];
-  return [...new Set([...recent,...(saved||[])])].slice(0,12).map(v=>({v,n:seen.get(v)||0}));
+  const cnt=new Map();S.receipts.forEach(r=>{const v=r[field];if(v)cnt.set(v,(cnt.get(v)||0)+1)});
+  return [...new Set([...recentVals(field),...(saved||[])])].slice(0,8).map(v=>({v,n:cnt.get(v)||0}));
 }
 function chips(box,list,input,onPick){
   const cur=$(input).value.trim();
-  $(box).innerHTML=list.map((o,i)=>`<button type="button" class="chip${o.v===cur?' on':''}" data-i="${i}">${esc(o.label||o.v)}${o.sub?`<small>${esc(o.sub)}</small>`:''}</button>`).join('');
-  $(box).querySelectorAll('.chip').forEach(b=>b.onclick=()=>{const o=list[b.dataset.i];$(input).value=o.v;onPick&&onPick(o);renderReceipt()});
+  $(box).innerHTML=list.map((o,i)=>`<button type="button" class="chip${o.v===cur&&!o.sub?' on':''}" data-i="${i}">${esc(o.label||o.v)}${o.sub?`<small>${esc(o.sub)}</small>`:''}</button>`).join('');
+  $(box).querySelectorAll('.chip').forEach(b=>b.onclick=()=>{const o=list[b.dataset.i];if(onPick)onPick(o);else $(input).value=o.v;renderReceipt()});
 }
 function renderReceipt(){
-  const q=$('r-name').value.trim();
-  let cs=S.customers.slice().sort((a,b)=>(b.last||'').localeCompare(a.last||''));
-  if(q) cs=cs.filter(c=>c.name.includes(q));
-  chips('c-name',cs.slice(0,10).map(c=>({v:c.name,sub:c.code})),'r-name',o=>fillFromCustomer(o.v));
-  chips('c-racket',opts('racket',S.rackets),'r-racket');
-  chips('c-string',opts('string',S.strings),'r-string');
+  const q=$('r-name').value.trim(),ph=digits($('r-phone').value),m=matchCust();
+  // 이름 칩: 입력한 이름/번호로 검색 (일치 고객이 확정되면 숨김)
+  let cs=[];
+  if(!m&&(q||ph.length>=3)){
+    cs=S.customers.filter(c=>(q&&c.name.includes(q))||(ph.length>=3&&digits(c.phone).includes(ph)))
+      .sort((a,b)=>(b.last||'').localeCompare(a.last||'')).slice(0,8);
+  }
+  chips('c-name',cs.map(c=>({v:c.code,label:c.name,sub:c.phone?c.phone.slice(-4):c.code})),'r-name',o=>fillFromCustomer(S.customers.find(c=>c.code===o.v)));
+  $('r-who').innerHTML=m?`기존 고객 <span class="code">${esc(m.code)}</span>${m.phone?' · '+esc(m.phone):''}`:(q&&!ph&&S.customers.filter(c=>c.name===q).length>1?'같은 이름 고객이 여러 명입니다 — 아래에서 선택하거나 연락처를 입력하세요':q?'신규 고객으로 등록됩니다':'');
   chips('c-tension',opts('tension',['48/46','46/44','45/43','44/42']),'r-tension');
   const prices=[...new Set([S.settings.price,...S.receipts.map(r=>r.price)])].slice(0,5);
   chips('c-price',prices.map(p=>({v:Number(p).toLocaleString('ko-KR'),label:won(p)})),'r-price');
   $('preview').textContent=buildText();
 }
 function buildText(){
-  const s=S.settings,name=$('r-name').value.trim(),c=findCust(name);
+  const s=S.settings,name=$('r-name').value.trim(),c=matchCust();
   const price=won($('r-price').value),L='ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ';
   let t=`${s.acc} ${s.bank}\n${s.holder}\n\n${price}\n${L}\n${dot($('r-date').value)}\n\n`+
     `성함 : ${name}\n라켓종류 : ${$('r-racket').value.trim()}\n스트링종류 : ${$('r-string').value.trim()}\n`+
@@ -280,15 +330,58 @@ function buildText(){
   if($('r-fb').checked){const u=fbUrl(c?c.code:'(신규코드)');if(u) t+=`\n후기 및 피드백 : ${u}`}
   return t;
 }
-['r-date','r-racket','r-string','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{$('preview').textContent=buildText()}));
-$('r-name').addEventListener('input',renderReceipt);
+['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{$('preview').textContent=buildText()}));
+// 성함 입력 → 기존 고객이면 연락처 자동 선택
+$('r-name').addEventListener('input',()=>{
+  const name=$('r-name').value.trim(),same=S.customers.filter(c=>c.name===name);
+  if(same.length===1&&!digits($('r-phone').value)) fillFromCustomer(same[0]);
+  renderReceipt();
+});
+$('r-phone').addEventListener('input',()=>{
+  const el=$('r-phone'),f=fmtPhone(el.value);if(el.value!==f)el.value=f;
+  const ph=digits(f);
+  if(ph.length>=10&&!$('r-name').value.trim()){const c=S.customers.find(x=>digits(x.phone)===ph);if(c)fillFromCustomer(c)}
+  renderReceipt();
+});
 $('r-price').addEventListener('blur',()=>{const n=Number($('r-price').value.replace(/[^\d]/g,''));if(n)$('r-price').value=n.toLocaleString('ko-KR');renderReceipt()});
 
+// ---------- 터치 목록 선택 (라켓/스트링) ----------
+let pkField=null;
+function openPicker(field){
+  pkField=field;$('pk-ttl').textContent=field==='racket'?'라켓종류 선택':'스트링종류 선택';
+  $('pk-q').value='';renderPicker();$('pk-bg').classList.add('on');document.body.classList.add('lock');
+  $('pk-list').scrollTop=0;
+}
+function closePicker(){$('pk-bg').classList.remove('on');document.body.classList.remove('lock')}
+function renderPicker(){
+  const saved=S[pkField==='racket'?'rackets':'strings'],cur=$('r-'+pkField).value.trim();
+  const q=$('pk-q').value.trim(),ql=q.toLowerCase(),hit=v=>!q||v.toLowerCase().includes(ql);
+  const cnt=new Map();S.receipts.forEach(r=>{const v=r[pkField];if(v)cnt.set(v,(cnt.get(v)||0)+1)});
+  const recent=recentVals(pkField).slice(0,5).filter(hit);
+  const all=[...new Set([...saved,...recentVals(pkField)])].filter(hit).sort((a,b)=>a.localeCompare(b,'ko'));
+  const item=v=>`<button type="button" class="sh-it${v===cur?' on':''}" data-v="${esc(v)}"><span>${esc(v)}${cnt.get(v)?` <small>${cnt.get(v)}회</small>`:''}</span></button>`;
+  const add=q&&!all.some(v=>v.toLowerCase()===ql)?`<button type="button" class="sh-it add" data-v="${esc(q)}">＋ '${esc(q)}' 새로 입력</button>`:'';
+  let h='';
+  if(recent.length&&!q) h+='<div class="sh-sec">최근 사용</div>'+recent.map(item).join('');
+  h+=`<div class="sh-sec">${q?'검색 결과 '+all.length+'개':'전체 '+all.length+'개'}</div>`+all.map(item).join('')+add;
+  if(!all.length&&!q) h+='<div class="empty">등록된 항목이 없습니다.<br>위 칸에 입력하면 바로 추가됩니다</div>';
+  $('pk-list').innerHTML=h;
+  $('pk-list').querySelectorAll('.sh-it').forEach(b=>b.onclick=()=>{$('r-'+pkField).value=b.dataset.v;closePicker();renderReceipt()});
+}
+['racket','string'].forEach(f=>$('r-'+f).addEventListener('click',()=>openPicker(f)));
+$('pk-q').addEventListener('input',renderPicker);
+$('pk-q').addEventListener('keydown',e=>{if(e.key==='Enter'){const q=$('pk-q').value.trim();if(q){$('r-'+pkField).value=q;closePicker();renderReceipt()}}});
+$('pk-close').onclick=closePicker;
+$('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()});
+
 function commit(){
-  const name=$('r-name').value.trim();
+  const name=$('r-name').value.trim(),phone=fmtPhone($('r-phone').value);
   if(!name){toast('성함을 입력하세요');$('r-name').focus();return null}
-  let c=findCust(name),isNew=false;
-  if(!c){c={code:newCode(),name,phone:'',memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
+  if(!$('r-racket').value.trim()||!$('r-string').value.trim()){toast('라켓·스트링을 선택하세요');return null}
+  const text=buildText();
+  let c=matchCust(),isNew=false;
+  if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
+  else if(phone&&!c.phone) c.phone=phone;
   const r={id:uid(),date:$('r-date').value,code:c.code,name,racket:$('r-racket').value.trim(),string:$('r-string').value.trim(),
     tension:$('r-tension').value.trim(),price:Number($('r-price').value.replace(/[^\d]/g,''))||0};
   c.last=r.date;
@@ -297,7 +390,7 @@ function commit(){
   S.receipts.unshift(r);save();
   sync({type:'receipt',receipt:r,customer:c});
   if(isNew) toast('신규 고객 등록: '+c.code);
-  return buildText();
+  return isNew?text.replace('(신규코드)',encodeURIComponent(c.code)):text;
 }
 async function copyText(t){
   try{await navigator.clipboard.writeText(t);return true}catch(e){
@@ -315,10 +408,10 @@ $('copy').onclick=async()=>{const t=commit();if(!t)return;await copyText(t);toas
 function renderCustomers(){
   const q=$('cs-q').value.trim();
   let cs=S.customers.slice().sort((a,b)=>(b.last||'').localeCompare(a.last||''));
-  if(q) cs=cs.filter(c=>(c.name+c.code+(c.phone||'')).includes(q));
+  if(q) cs=cs.filter(c=>(c.name+c.code+(c.phone||'')+digits(c.phone)).includes(q));
   $('cs-list').innerHTML=cs.length?cs.map(c=>{
     const n=S.receipts.filter(r=>r.code===c.code).length;
-    return `<div class="it" data-c="${esc(c.code)}"><div class="m"><b>${esc(c.name)} <span class="code">${esc(c.code)}</span></b><small>${n}회 · 최근 ${esc(c.last?dot(c.last):'-')}</small></div><span class="muted">›</span></div>`}).join('')
+    return `<div class="it" data-c="${esc(c.code)}"><div class="m"><b>${esc(c.name)} <span class="code">${esc(c.code)}</span></b><small>${c.phone?esc(c.phone)+' · ':''}${n}회 · 최근 ${esc(c.last?dot(c.last):'-')}</small></div><span class="muted">›</span></div>`}).join('')
     :'<div class="empty">고객이 없습니다.<br>접수증을 보내면 자동 등록됩니다.</div>';
   $('cs-list').querySelectorAll('.it').forEach(e=>e.onclick=()=>{curCust=e.dataset.c;show('customer')});
 }
@@ -341,13 +434,16 @@ function renderCustomer(){
 $('cd-save').onclick=()=>{
   const c=S.customers.find(x=>x.code===curCust),nm=$('cd-name').value.trim();
   if(!nm){toast('성함을 입력하세요');return}
-  if(S.customers.some(x=>x.name===nm&&x.code!==c.code)){toast('같은 이름의 고객이 있습니다 (예: 소은A)');return}
+  const ph=digits($('cd-phone').value);
+  if(ph&&S.customers.some(x=>x.code!==c.code&&digits(x.phone)===ph)){toast('같은 연락처의 고객이 이미 있습니다');return}
+  if(!ph&&S.customers.some(x=>x.name===nm&&x.code!==c.code&&!x.phone)){toast('같은 이름이 있어요. 연락처를 입력해 구분하세요');return}
   if(c.name!==nm) S.receipts.forEach(r=>{if(r.code===c.code)r.name=nm});
-  c.name=nm;c.phone=$('cd-phone').value.trim();c.memo=$('cd-memo').value.trim();save();
+  c.name=nm;c.phone=fmtPhone($('cd-phone').value);c.memo=$('cd-memo').value.trim();save();
   sync({type:'customer',customer:c});toast('저장됨');
 };
+$('cd-phone').addEventListener('input',()=>{const e=$('cd-phone'),f=fmtPhone(e.value);if(e.value!==f)e.value=f});
 $('cd-fbcopy').onclick=async()=>{const u=fbUrl(curCust);if(!u){toast('후기 링크 설정이 없습니다');return}await copyText(u);toast('링크 복사됨')};
-$('cd-new').onclick=()=>{const c=S.customers.find(x=>x.code===curCust);resetReceipt(c.name);show('receipt')};
+$('cd-new').onclick=()=>{resetReceipt(curCust);show('receipt')};
 $('cd-del').onclick=function(){
   if(!this.dataset.ok){this.dataset.ok=1;this.textContent='정말 삭제할까요? (한번 더 누르기)';return}
   S.customers=S.customers.filter(x=>x.code!==curCust);save();this.dataset.ok='';this.textContent='고객 삭제';
