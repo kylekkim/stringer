@@ -317,7 +317,7 @@ function resetReceipt(code){
 function fillFromCustomer(c){
   if(!c)return;
   $('r-name').value=c.name;$('r-phone').value=c.phone||'';
-  if(!getHand()&&c.hand)setHand(c.hand);
+  if(!getHand()&&c.hand){setHand(c.hand);$('preview').textContent=buildText()}
   const last=S.receipts.find(r=>r.code===c.code);if(!last)return;
   // 이미 고른 값은 유지하고 빈 칸만 지난번 값으로 채움
   [['racket','racket'],['string','string'],['tension','tension']].forEach(([f,k])=>{if(!$('r-'+f).value.trim())$('r-'+f).value=last[k]||''});
@@ -353,7 +353,7 @@ function buildText(){
   const price=won($('r-price').value),L='ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ';
   let t=`${s.acc} ${s.bank}\n${s.holder}\n\n${price}\n${L}\n${dot($('r-date').value)}\n\n`+
     `성함 : ${name}\n라켓종류 : ${$('r-racket').value.trim()}\n스트링종류 : ${$('r-string').value.trim()}\n`+
-    `텐션 : ${$('r-tension').value.trim()}\n금액 : ${price}\n${L}`;
+    `텐션 : ${$('r-tension').value.trim()}\n${getHand()?`주손 : ${getHand()}\n`:''}금액 : ${price}\n${L}`;
   if($('r-fb').checked){const u=fbUrl(c?c.code:'(신규코드)');if(u) t+=`\n후기 및 피드백 : ${u}`}
   return t;
 }
@@ -374,7 +374,7 @@ $('r-price').addEventListener('blur',()=>{const n=Number($('r-price').value.repl
 
 const getHand=()=>($('r-hand').querySelector('.on')||{}).dataset?.h||'';
 function setHand(h){$('r-hand').querySelectorAll('button').forEach(b=>{const on=b.dataset.h===h;b.classList.toggle('on',on);b.setAttribute('aria-checked',on)})}
-$('r-hand').querySelectorAll('button').forEach(b=>b.onclick=()=>setHand(b.classList.contains('on')?'':b.dataset.h));
+$('r-hand').querySelectorAll('button').forEach(b=>b.onclick=()=>{setHand(b.classList.contains('on')?'':b.dataset.h);$('preview').textContent=buildText()});
 
 // ---------- 터치 목록 선택 (라켓/스트링) ----------
 let pkField=null;
@@ -519,6 +519,7 @@ $('s-imp').onchange=e=>{const f=e.target.files[0];if(!f)return;f.text().then(t=>
   try{const d=JSON.parse(t);if(!d.customers||!d.receipts)throw 0;S=d;for(const k in DEF)if(S[k]===undefined)S[k]=structuredClone(DEF[k]);save();toast('복원 완료');show('home')}
   catch(x){toast('백업 파일이 올바르지 않습니다')}})};
 
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 history.replaceState({root:1},'');history.pushState({v:'home'},'');
 show('home',false);
 }
