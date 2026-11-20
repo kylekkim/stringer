@@ -388,9 +388,11 @@ function setHand(h){$('r-hand').querySelectorAll('button').forEach(b=>{const on=
 $('r-hand').querySelectorAll('button').forEach(b=>b.onclick=()=>{setHand(b.classList.contains('on')?'':b.dataset.h);$('preview').textContent=buildText()});
 
 // ---------- 터치 목록 선택 (라켓/스트링) ----------
-let pkField=null;
+let pkField=null,pkEdit=null;   // pkEdit: 수정 중인 기존 값
+const pkSaved=()=>S[pkField==='racket'?'rackets':'strings'];
+const useCount=v=>S.receipts.filter(r=>r[pkField]===v).length;
 function openPicker(field){
-  pkField=field;$('pk-ttl').textContent=field==='racket'?'라켓종류 선택':'스트링종류 선택';
+  pkField=field;pkEdit=null;$('pk-ttl').textContent=field==='racket'?'라켓종류 선택':'스트링종류 선택';
   $('pk-q').value='';renderPicker();$('pk-bg').classList.add('on');document.body.classList.add('lock');
   $('pk-list').scrollTop=0;
   history.pushState({v:curView,pk:1},'');
@@ -398,27 +400,44 @@ function openPicker(field){
 // fromPop: 폰 뒤로가기로 닫힌 경우. 그 외(선택·닫기 버튼)는 기록을 한 칸 되돌려 맞춤
 function closePicker(fromPop){
   if(!$('pk-bg').classList.contains('on'))return;
-  $('pk-bg').classList.remove('on');document.body.classList.remove('lock');
+  $('pk-bg').classList.remove('on');document.body.classList.remove('lock');pkEdit=null;
   if(!fromPop)history.back();
 }
+// 값 확정: 새로 입력한 값은 바로 목록에 저장 → 다시 열어도 스크롤 목록에 보임
+function pickValue(v){
+  v=v.trim();if(!v)return;
+  const L=pkSaved();
+  if(pkEdit&&pkEdit!==v){
+    const i=L.indexOf(pkEdit);
+    if(i>=0&&!useCount(pkEdit)) L.splice(i,1);   // 접수에 안 쓰인 오타 값은 목록에서 교체
+  }
+  if(!L.includes(v)) L.unshift(v);
+  save();$('r-'+pkField).value=v;closePicker();renderReceipt();
+}
 function renderPicker(){
-  const saved=S[pkField==='racket'?'rackets':'strings'],cur=$('r-'+pkField).value.trim();
+  const saved=pkSaved(),cur=$('r-'+pkField).value.trim();
   const q=$('pk-q').value.trim(),ql=q.toLowerCase(),hit=v=>!q||v.toLowerCase().includes(ql);
   const cnt=new Map();S.receipts.forEach(r=>{const v=r[pkField];if(v)cnt.set(v,(cnt.get(v)||0)+1)});
   const recent=recentVals(pkField).slice(0,5).filter(hit);
-  const all=[...new Set([...saved,...recentVals(pkField)])].filter(hit).sort((a,b)=>a.localeCompare(b,'ko'));
+  const all=[...new Set([...saved,...recentVals(pkField),...(cur?[cur]:[])])].filter(hit).sort((a,b)=>a.localeCompare(b,'ko'));
   const item=v=>`<button type="button" class="sh-it${v===cur?' on':''}" data-v="${esc(v)}"><span>${esc(v)}${cnt.get(v)?` <small>${cnt.get(v)}회</small>`:''}</span></button>`;
-  const add=q&&!all.some(v=>v.toLowerCase()===ql)?`<button type="button" class="sh-it add" data-v="${esc(q)}">＋ '${esc(q)}' 새로 입력</button>`:'';
+  const add=q&&!all.some(v=>v.toLowerCase()===ql)?`<button type="button" class="sh-it add" data-v="${esc(q)}">${pkEdit?'✓ \''+esc(q)+'\'(으)로 수정':'＋ \''+esc(q)+'\' 새로 입력'}</button>`:'';
   let h='';
+  if(cur&&!q&&!pkEdit) h+=`<div class="sh-sec">현재 선택</div><div class="sh-it on" style="cursor:default"><span>${esc(cur)}</span></div>
+    <div class="row" style="margin:8px 0 4px"><button type="button" class="btn ghost" id="pk-edit" style="margin:0;min-height:44px;padding:8px;font-size:15px">✏ 글자 수정</button>
+    <button type="button" class="btn ghost" id="pk-clear" style="margin:0;min-height:44px;padding:8px;font-size:15px">선택 해제</button></div>`;
+  if(pkEdit) h+=`<div class="sh-sec">'${esc(pkEdit)}' 수정 중 — 위 칸에서 고친 뒤 아래 버튼을 누르세요</div>`;
   if(recent.length&&!q) h+='<div class="sh-sec">최근 사용</div>'+recent.map(item).join('');
-  h+=`<div class="sh-sec">${q?'검색 결과 '+all.length+'개':'전체 '+all.length+'개'}</div>`+all.map(item).join('')+add;
+  h+=`<div class="sh-sec">${q?'검색 결과 '+all.length+'개':'전체 '+all.length+'개'}</div>`+add+all.map(item).join('');
   if(!all.length&&!q) h+='<div class="empty">등록된 항목이 없습니다.<br>위 칸에 입력하면 바로 추가됩니다</div>';
   $('pk-list').innerHTML=h;
-  $('pk-list').querySelectorAll('.sh-it').forEach(b=>b.onclick=()=>{$('r-'+pkField).value=b.dataset.v;closePicker();renderReceipt()});
+  $('pk-list').querySelectorAll('button.sh-it').forEach(b=>b.onclick=()=>pickValue(b.dataset.v));
+  if($('pk-edit'))$('pk-edit').onclick=()=>{pkEdit=cur;$('pk-q').value=cur;renderPicker();$('pk-q').focus()};
+  if($('pk-clear'))$('pk-clear').onclick=()=>{$('r-'+pkField).value='';closePicker();renderReceipt()};
 }
 ['racket','string'].forEach(f=>$('r-'+f).addEventListener('click',()=>openPicker(f)));
 $('pk-q').addEventListener('input',renderPicker);
-$('pk-q').addEventListener('keydown',e=>{if(e.key==='Enter'){const q=$('pk-q').value.trim();if(q){$('r-'+pkField).value=q;closePicker();renderReceipt()}}});
+$('pk-q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();pickValue($('pk-q').value)}});
 $('pk-close').onclick=()=>closePicker();
 $('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()});
 
