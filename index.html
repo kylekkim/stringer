@@ -143,7 +143,8 @@ body.lock{overflow:hidden}
     <pre class="receipt" id="preview"></pre>
   </div>
   <button class="btn kakao" id="send">카카오톡으로 보내기</button>
-  <button class="btn ghost" id="copy">복사만 하기</button>
+  <div class="row"><button class="btn ghost" id="copy">복사하기</button><button class="btn ghost" id="save">저장하기</button></div>
+  <p class="muted" id="r-saved" style="text-align:center;min-height:1.5em;margin:8px 0 0"></p>
 </section>
 
 <!-- 고객관리 -->
@@ -242,9 +243,9 @@ const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('
 
 let tt;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
 
-// 고객코드: 추측하기 어려운 6자리 (혼동 문자 제외)
-function newCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let c;
-  do{c='K'+Array.from({length:5},()=>A[Math.floor(Math.random()*A.length)]).join('')}while(S.customers.some(x=>x.code===c));return c}
+// 고객코드: 무작위 4자리 숫자 (1000~9999, 기존 코드와 중복 없이)
+function newCode(){let c,n=0;
+  do{c=String(1000+Math.floor(Math.random()*9000));if(++n>20000)return 'X'+uid()}while(S.customers.some(x=>x.code===c));return c}
 function fbUrl(code){
   if(S.settings.gas) return S.settings.gas.trim()+'?code='+encodeURIComponent(code);
   if(S.settings.fb) return S.settings.fb.includes('{code}')?S.settings.fb.replace(/\{code\}/g,encodeURIComponent(code)):S.settings.fb;
@@ -309,6 +310,7 @@ function matchCust(){
   return null;
 }
 function resetReceipt(code){
+  lastSig='';lastText='';markSaved(false);
   $('r-date').value=ymd(new Date());
   ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');setHand('');
   $('r-price').value=Number(S.settings.price).toLocaleString('ko-KR');
@@ -334,6 +336,7 @@ function chips(box,list,input,onPick){
   $(box).querySelectorAll('.chip').forEach(b=>b.onclick=()=>{const o=list[b.dataset.i];if(onPick)onPick(o);else $(input).value=o.v;renderReceipt()});
 }
 function renderReceipt(){
+  markSaved(lastSig&&lastSig===formSig());
   const q=$('r-name').value.trim(),ph=digits($('r-phone').value),m=matchCust();
   // 이름 칩: 입력한 이름/번호로 검색 (일치 고객이 확정되면 숨김)
   let cs=[];
@@ -342,7 +345,7 @@ function renderReceipt(){
       .sort((a,b)=>(b.last||'').localeCompare(a.last||'')).slice(0,8);
   }
   chips('c-name',cs.map(c=>({v:c.code,label:c.name,sub:c.phone?c.phone.slice(-4):c.code})),'r-name',o=>fillFromCustomer(S.customers.find(c=>c.code===o.v)));
-  $('r-who').innerHTML=m?`기존 고객 <span class="code">${esc(m.code)}</span>${m.phone?' · '+esc(m.phone):''}`:(q&&!ph&&S.customers.filter(c=>c.name===q).length>1?'같은 이름 고객이 여러 명입니다 — 아래에서 선택하거나 연락처를 입력하세요':q?'신규 고객으로 등록됩니다':'');
+  $('r-who').innerHTML=m?`기존 고객 <span class="code">${esc(m.code)}</span>${m.phone?' · '+esc(m.phone):''}${q&&m.name!==q?` · <b style="color:var(--red)">이 번호는 '${esc(m.name)}' 고객으로 등록됨</b>`:''}`:(q&&!ph&&S.customers.filter(c=>c.name===q).length>1?'같은 이름 고객이 여러 명입니다 — 아래에서 선택하거나 연락처를 입력하세요':q?'신규 고객으로 등록됩니다':'');
   chips('c-tension',opts('tension',['48/46','46/44','45/43','44/42']),'r-tension');
   const prices=[...new Set([S.settings.price,...S.receipts.map(r=>r.price)])].slice(0,5);
   chips('c-price',prices.map(p=>({v:Number(p).toLocaleString('ko-KR'),label:won(p)})),'r-price');
@@ -357,7 +360,7 @@ function buildText(){
   if($('r-fb').checked){const u=fbUrl(c?c.code:'(신규코드)');if(u) t+=`\n후기 및 피드백 : ${u}`}
   return t;
 }
-['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{$('preview').textContent=buildText()}));
+['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{$('preview').textContent=buildText();markSaved(lastSig&&lastSig===formSig())}));
 // 성함 입력 → 기존 고객이면 연락처 자동 선택
 $('r-name').addEventListener('input',()=>{
   const name=$('r-name').value.trim(),same=S.customers.filter(c=>c.name===name);
@@ -411,7 +414,12 @@ $('pk-q').addEventListener('keydown',e=>{if(e.key==='Enter'){const q=$('pk-q').v
 $('pk-close').onclick=()=>closePicker();
 $('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()});
 
+// 같은 내용으로 이미 저장했으면 다시 저장하지 않음 (보내기→복사 눌러도 1건만 기록)
+let lastSig='',lastText='';
+const formSig=()=>JSON.stringify([...['date','name','phone','racket','string','tension','price'].map(k=>$('r-'+k).value.trim()),getHand(),$('r-fb').checked]);
+function markSaved(on){$('r-saved').textContent=on?'✓ 저장된 접수입니다':''}
 function commit(){
+  if(lastSig&&lastSig===formSig())return lastText;
   const name=$('r-name').value.trim(),phone=fmtPhone($('r-phone').value);
   if(!name){toast('성함을 입력하세요');$('r-name').focus();return null}
   if(!$('r-racket').value.trim()||!$('r-string').value.trim()){toast('라켓·스트링을 선택하세요');return null}
@@ -427,7 +435,9 @@ function commit(){
   S.receipts.unshift(r);save();
   sync({type:'receipt',receipt:r,customer:c});
   if(isNew) toast('신규 고객 등록: '+c.code);
-  return isNew?text.replace('(신규코드)',encodeURIComponent(c.code)):text;
+  lastText=isNew?text.replace('(신규코드)',encodeURIComponent(c.code)):text;
+  lastSig=formSig();markSaved(true);$('preview').textContent=lastText;
+  return lastText;
 }
 async function copyText(t){
   try{await navigator.clipboard.writeText(t);return true}catch(e){
@@ -439,7 +449,8 @@ $('send').onclick=async()=>{
   if(navigator.share){try{await navigator.share({text:t});return}catch(e){if(e.name==='AbortError'){toast('전송 취소됨 (접수는 저장됨)');return}}}
   await copyText(t);toast('복사됨 — 카카오톡 대화창에 붙여넣기');
 };
-$('copy').onclick=async()=>{const t=commit();if(!t)return;await copyText(t);toast('접수 저장 + 복사 완료')};
+$('copy').onclick=async()=>{const t=commit();if(!t)return;await copyText(t);toast('복사 완료 (접수 저장됨)')};
+$('save').onclick=()=>{const was=lastSig&&lastSig===formSig();const t=commit();if(!t)return;toast(was?'이미 저장된 접수입니다':'접수가 저장되었습니다')};
 
 // ---------- 고객 ----------
 function renderCustomers(){
