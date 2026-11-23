@@ -86,7 +86,7 @@ body.lock{overflow:hidden}
 .xrow input:first-child{flex:1.4}.xrow input:nth-child(2){flex:1;text-align:right}
 .xrow .x{flex:0 0 auto}
 .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
-.total b{font-size:22px;color:var(--court)}
+.total b{font-size:22px;color:var(--court);white-space:nowrap}
 .filters{display:flex;gap:6px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px}
 .filters .chip{flex:none}
 .wk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
@@ -183,9 +183,17 @@ body.lock{overflow:hidden}
     <h2>미리보기</h2>
     <pre class="receipt" id="preview"></pre>
   </div>
-  <button class="btn kakao" id="send">카카오톡으로 보내기</button>
-  <div class="row"><button class="btn ghost" id="copy">복사하기</button><button class="btn ghost" id="save">저장하기</button></div>
-  <p class="muted" id="r-saved" style="text-align:center;min-height:1.5em;margin:8px 0 0"></p>
+  <div id="new-bar">
+    <button class="btn kakao" id="send">카카오톡으로 보내기</button>
+    <div class="row"><button class="btn ghost" id="copy">복사하기</button><button class="btn ghost" id="save">저장하기</button></div>
+    <p class="muted" id="r-saved" style="text-align:center;min-height:1.5em;margin:8px 0 0"></p>
+  </div>
+  <div id="edit-bar" style="display:none">
+    <p class="muted" id="e-info" style="margin:4px 2px 0"></p>
+    <button class="btn" id="e-save">수정 저장</button>
+    <button class="btn kakao" id="e-send">수정 저장 + 카카오톡으로 다시 보내기</button>
+    <button class="btn danger" id="e-del">이 작업 삭제</button>
+  </div>
 </section>
 
 <!-- 작업내역 -->
@@ -319,7 +327,7 @@ function show(v,push=true){
   if(push&&v!==curView) history.pushState({v,kind:itemKind,cust:curCust},'');
   curView=v;
   document.querySelectorAll('.view').forEach(x=>x.classList.toggle('on',x.id==='v-'+v));
-  $('ttl').textContent=v==='items'?(itemKind==='strings'?'스트링종류':'라켓종류'):TITLES[v];
+  $('ttl').textContent=v==='items'?(itemKind==='strings'?'스트링종류':'라켓종류'):v==='receipt'&&editId?'작업 수정':TITLES[v];
   $('back').style.visibility=v==='home'?'hidden':'visible';
   window.scrollTo(0,0);
   ({home:renderHome,work:renderWork,receipt:renderReceipt,customers:renderCustomers,customer:renderCustomer,items:renderItems,settings:renderSettings})[v]();
@@ -367,6 +375,7 @@ function matchCust(){
   return null;
 }
 function resetReceipt(code){
+  setEditMode(null);
   lastSig='';lastText='';markSaved(false);
   $('r-date').value=ymd(new Date());
   ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');setHand('');$('x-rows').innerHTML='';
@@ -380,7 +389,7 @@ function fillFromCustomer(c){
   const last=S.receipts.find(r=>r.code===c.code);if(!last)return;
   // 이미 고른 값은 유지하고 빈 칸만 지난번 값으로 채움
   [['racket','racket'],['string','string'],['tension','tension']].forEach(([f,k])=>{if(!$('r-'+f).value.trim())$('r-'+f).value=last[k]||''});
-  $('r-price').value=Number(last.price).toLocaleString('ko-KR');
+  if(!editId)$('r-price').value=Number(last.price).toLocaleString('ko-KR');
 }
 // 추가 항목(범퍼 교체, 새 라켓 등): 이름 + 금액(0원이면 표시만)
 const num=v=>Number(String(v??'').replace(/[^\d]/g,''))||0;
@@ -524,7 +533,7 @@ $('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()})
 // 같은 내용으로 이미 저장했으면 다시 저장하지 않음 (보내기→복사 눌러도 1건만 기록)
 let lastSig='',lastText='';
 const formSig=()=>JSON.stringify([...['date','name','phone','racket','string','tension','price'].map(k=>$('r-'+k).value.trim()),getHand(),$('r-fb').checked,getExtras()]);
-function markSaved(on){$('r-saved').textContent=on?'✓ 저장된 접수입니다':''}
+function markSaved(on){$('r-saved').textContent=on&&!editId?'✓ 저장된 접수입니다':''}
 function commit(){
   if(lastSig&&lastSig===formSig())return lastText;
   const name=$('r-name').value.trim(),phone=fmtPhone($('r-phone').value);
@@ -557,6 +566,50 @@ $('send').onclick=async()=>{
 $('copy').onclick=async()=>{const t=commit();if(!t)return;await copyText(t);toast('복사 완료 (접수 저장됨)')};
 $('save').onclick=()=>{const was=lastSig&&lastSig===formSig();const t=commit();if(!t)return;toast(was?'이미 저장된 접수입니다':'접수가 저장되었습니다')};
 
+// ---------- 작업 수정 ----------
+let editId=null;
+function setEditMode(id){
+  editId=id;
+  $('new-bar').style.display=id?'none':'';$('edit-bar').style.display=id?'':'none';
+  $('e-del').textContent='이 작업 삭제';delete $('e-del').dataset.ok;
+}
+function loadForEdit(r){
+  resetReceipt();setEditMode(r.id);
+  $('r-date').value=r.date;$('r-name').value=r.name;
+  const c=S.customers.find(x=>x.code===r.code);$('r-phone').value=c&&c.phone||'';
+  $('r-racket').value=r.racket||'';$('r-string').value=r.string||'';$('r-tension').value=r.tension||'';setHand(r.hand||'');
+  $('r-price').value=Number(r.price||0).toLocaleString('ko-KR');
+  (r.extras||[]).forEach(x=>addExtra(x.name,x.amt));
+  $('e-info').textContent=`접수 ${dot(r.date)} · ${r.paid?'정산 완료':'정산 전'} · ${r.delivered?'전달 완료':'전달 전'} (상태는 그대로 유지됩니다)`;
+}
+function commitEdit(){
+  const r=S.receipts.find(x=>x.id===editId);if(!r){toast('작업을 찾을 수 없습니다');return null}
+  const name=$('r-name').value.trim(),phone=fmtPhone($('r-phone').value);
+  if(!name){toast('성함을 입력하세요');return null}
+  if(!$('r-racket').value.trim()||!$('r-string').value.trim()){toast('라켓·스트링을 선택하세요');return null}
+  let c=matchCust();
+  if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);toast('신규 고객 등록: '+c.code)}
+  else if(phone&&!c.phone) c.phone=phone;
+  Object.assign(r,formRecord(),{code:c.code});
+  if(r.hand)c.hand=r.hand;
+  if(!c.last||r.date>c.last)c.last=r.date;
+  if(r.racket&&!S.rackets.includes(r.racket)) S.rackets.push(r.racket);
+  if(r.string&&!S.strings.includes(r.string)) S.strings.push(r.string);
+  save();sync({type:'updateReceipt',receipt:r,customer:c});
+  return r;
+}
+$('e-save').onclick=()=>{if(commitEdit()){toast('수정 저장됨');history.back()}};
+$('e-send').onclick=async()=>{
+  const r=commitEdit();if(!r)return;const t=receiptText(r,$('r-fb').checked);
+  if(navigator.share){try{await navigator.share({text:t});history.back();return}catch(e){if(e.name==='AbortError'){toast('전송 취소됨 (수정은 저장됨)');return}}}
+  await copyText(t);toast('수정 저장 + 복사됨 — 카카오톡에 붙여넣기');
+};
+$('e-del').onclick=function(){
+  if(!this.dataset.ok){this.dataset.ok=1;this.textContent='정말 삭제할까요? (한번 더 누르기)';return}
+  S.receipts=S.receipts.filter(x=>x.id!==editId);save();sync({type:'deleteReceipt',id:editId});
+  toast('작업 삭제됨');history.back();
+};
+
 // ---------- 작업내역 ----------
 let wkFilter='all',wkLimit=50;
 const stamp=()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return `${ymd(d)} ${z(d.getHours())}:${z(d.getMinutes())}`};
@@ -575,7 +628,7 @@ function renderWork(){
       <div class="wk-h"><b>${esc(r.name)} <span class="code">${esc(r.code)}</span></b><time>${esc(dot(r.date))}</time></div>
       <div class="wk-b">${esc(r.racket)} · ${esc(r.string)}${r.tension?' · '+esc(r.tension):''}${r.hand?' · '+esc(r.hand):''}</div>
       ${ex?`<div class="wk-x">추가: ${ex}</div>`:''}
-      <div class="wk-h" style="margin-top:4px"><span class="wk-amt">${won(r.total??r.price)}</span><button type="button" class="wk-more" data-copy="1">접수증 다시 복사</button></div>
+      <div class="wk-h" style="margin-top:4px"><span class="wk-amt">${won(r.total??r.price)}</span><span><button type="button" class="wk-more" data-edit="1">✏ 수정</button> · <button type="button" class="wk-more" data-copy="1">접수증 복사</button></span></div>
       <div class="st">
         <button type="button" data-k="paid" class="${r.paid?'ok':''}">${r.paid?'✓ 정산 완료':'정산 전'}<small>${r.paid?esc(r.paidAt):'눌러서 완료'}</small></button>
         <button type="button" data-k="delivered" class="${r.delivered?'ok':''}">${r.delivered?'✓ 전달 완료':'전달 전'}<small>${r.delivered?esc(r.deliveredAt):'눌러서 완료'}</small></button>
@@ -589,6 +642,7 @@ function renderWork(){
       toast(k==='paid'?(r.paid?'정산 완료':'정산 전으로 되돌림'):(r.delivered?'전달 완료':'전달 전으로 되돌림'));renderWork();
     });
     card.querySelector('[data-copy]').onclick=async()=>{await copyText(receiptText(r,true));toast('접수증 복사됨')};
+    card.querySelector('[data-edit]').onclick=()=>{loadForEdit(r);show('receipt')};
   });
   if($('wk-moreall'))$('wk-moreall').onclick=()=>{wkLimit+=100;renderWork()};
 }
