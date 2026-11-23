@@ -82,6 +82,33 @@ h2{font-size:17px;margin:4px 0 10px}
 .sh-it small{color:var(--sub);font-size:13px}
 .sh-it.add{color:var(--court2);font-weight:700}
 body.lock{overflow:hidden}
+.xrow{display:flex;gap:6px;margin-top:8px;align-items:center}
+.xrow input:first-child{flex:1.4}.xrow input:nth-child(2){flex:1;text-align:right}
+.xrow .x{flex:0 0 auto}
+.total{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.total b{font-size:22px;color:var(--court)}
+.filters{display:flex;gap:6px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px}
+.filters .chip{flex:none}
+.wk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:10px}
+.wk.done{opacity:.72}
+.wk-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.wk-h b{font-size:17px}
+.wk-h time{color:var(--sub);font-size:13px;white-space:nowrap}
+.wk-b{color:var(--ink);font-size:15px;margin:6px 0 2px}
+.wk-x{color:var(--sub);font-size:14px}
+.wk-amt{font-weight:800;font-size:16px;white-space:nowrap}
+.st{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.st button{border:1px solid var(--line);background:#fff;border-radius:12px;min-height:50px;font:inherit;font-size:15px;font-weight:700;color:var(--sub);padding:6px}
+.st button small{display:block;font-weight:400;font-size:12px}
+.st button.ok{background:#1f9d55;border-color:#1f9d55;color:#fff}
+.st button.ok small{color:#d9f5e5}
+.wk-more{background:none;border:0;color:var(--court2);font:inherit;font-size:14px;padding:8px 0 0;min-height:36px}
+.badge{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:4px;background:#eef1f5;color:var(--sub)}
+.badge.ok{background:#e3f6eb;color:#1f7a45}
+.big.work{grid-column:1/-1;min-height:84px;flex-direction:row;align-items:center;border:2px solid var(--court2)}
+.big.work .t{flex:1}
+.big.work .cnt{font-size:14px;color:var(--sub);text-align:right;line-height:1.4}
+.big.work .cnt b{color:var(--red)}
 .seg{display:flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
 .seg button{border:0;background:#fff;font:inherit;font-size:15px;padding:0 14px;min-height:49px;color:var(--sub)}
 .seg button+button{border-left:1px solid var(--line)}
@@ -101,6 +128,7 @@ body.lock{overflow:hidden}
   <div class="court"><b id="todayCnt">0건</b><span id="todayTxt">오늘 접수</span></div>
   <div class="grid">
     <button class="big main" data-go="receipt"><span class="t">1. 접수증 보내기</span><span class="muted" style="color:#cfe0f5">카카오톡으로 바로 전송</span></button>
+    <button class="big work" data-go="work"><span class="t">작업내역</span><span class="cnt" id="homeWork"></span></button>
     <button class="big" data-go="customers"><span class="n">2</span><span class="t">고객관리</span></button>
     <button class="big" data-go="strings"><span class="n">3</span><span class="t">스트링종류 추가</span></button>
     <button class="big" data-go="rackets"><span class="n">4</span><span class="t">라켓종류 추가</span></button>
@@ -136,6 +164,15 @@ body.lock{overflow:hidden}
     <label class="f" for="r-price">금액 (원)</label>
     <input id="r-price" inputmode="numeric" autocomplete="off">
     <div class="chips" id="c-price"></div>
+    <label class="f">추가 항목 (선택)</label>
+    <div class="chips" id="x-presets">
+      <button type="button" class="chip" data-x="범퍼 교체">+ 범퍼 교체</button>
+      <button type="button" class="chip" data-x="그립 교체">+ 그립 교체</button>
+      <button type="button" class="chip" data-x="새 라켓(주문)">+ 새 라켓(주문)</button>
+      <button type="button" class="chip" data-x="">+ 직접 입력</button>
+    </div>
+    <div id="x-rows"></div>
+    <div class="total"><span class="muted" id="x-sum">합계</span><b id="x-total">0원</b></div>
     <div class="sw"><span class="muted">후기 및 피드백 링크 포함</span><input type="checkbox" id="r-fb" checked></div>
     <div id="r-fbwarn" style="display:none;margin-top:10px;padding:12px;border-radius:12px;background:#fdecea;color:#a3271d;font-size:14px">
       후기 링크 주소가 아직 설정되지 않아 접수증에 링크가 빠집니다.<br>⚙ 설정 → <b>Apps Script 웹앱 URL</b> 입력 후 <b>설정 저장</b>을 눌러 주세요.
@@ -149,6 +186,20 @@ body.lock{overflow:hidden}
   <button class="btn kakao" id="send">카카오톡으로 보내기</button>
   <div class="row"><button class="btn ghost" id="copy">복사하기</button><button class="btn ghost" id="save">저장하기</button></div>
   <p class="muted" id="r-saved" style="text-align:center;min-height:1.5em;margin:8px 0 0"></p>
+</section>
+
+<!-- 작업내역 -->
+<section class="view" id="v-work">
+  <input id="wk-q" placeholder="이름·라켓·스트링 검색">
+  <div class="filters" id="wk-f">
+    <button type="button" class="chip on" data-f="all">전체</button>
+    <button type="button" class="chip" data-f="unpaid">정산 전</button>
+    <button type="button" class="chip" data-f="undeliv">전달 전</button>
+    <button type="button" class="chip" data-f="open">진행 중</button>
+    <button type="button" class="chip" data-f="done">모두 완료</button>
+  </div>
+  <p class="muted" id="wk-sum" style="margin:6px 2px 10px"></p>
+  <div id="wk-list"></div>
 </section>
 
 <!-- 고객관리 -->
@@ -261,7 +312,7 @@ function sync(payload){
 }
 
 // ---------- 화면 이동 ----------
-const TITLES={home:'스트링 접수',receipt:'접수증 보내기',customers:'고객관리',customer:'고객 정보',items:'',settings:'설정'};
+const TITLES={home:'스트링 접수',receipt:'접수증 보내기',customers:'고객관리',customer:'고객 정보',items:'',settings:'설정',work:'작업내역'};
 let itemKind='strings',curCust=null,curView='home';
 // 폰 뒤로가기 버튼이 앱 안의 이전 화면으로 가도록 브라우저 기록(history) 사용
 function show(v,push=true){
@@ -271,7 +322,7 @@ function show(v,push=true){
   $('ttl').textContent=v==='items'?(itemKind==='strings'?'스트링종류':'라켓종류'):TITLES[v];
   $('back').style.visibility=v==='home'?'hidden':'visible';
   window.scrollTo(0,0);
-  ({home:renderHome,receipt:renderReceipt,customers:renderCustomers,customer:renderCustomer,items:renderItems,settings:renderSettings})[v]();
+  ({home:renderHome,work:renderWork,receipt:renderReceipt,customers:renderCustomers,customer:renderCustomer,items:renderItems,settings:renderSettings})[v]();
 }
 $('back').onclick=()=>history.back();
 let exitArmed=0;
@@ -297,6 +348,8 @@ function renderHome(){
   const t=ymd(new Date()),n=S.receipts.filter(r=>r.date===t).length;
   $('todayCnt').textContent=n+'건';
   $('todayTxt').textContent='오늘 접수 · 고객 '+S.customers.length+'명';
+  const up=S.receipts.filter(r=>!r.paid).length,ud=S.receipts.filter(r=>!r.delivered).length;
+  $('homeWork').innerHTML=`정산 전 <b>${up}</b>건<br>전달 전 <b>${ud}</b>건`;
 }
 
 // ---------- 접수증 ----------
@@ -316,7 +369,7 @@ function matchCust(){
 function resetReceipt(code){
   lastSig='';lastText='';markSaved(false);
   $('r-date').value=ymd(new Date());
-  ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');setHand('');
+  ['name','phone','racket','string','tension'].forEach(k=>$('r-'+k).value='');setHand('');$('x-rows').innerHTML='';
   $('r-price').value=Number(S.settings.price).toLocaleString('ko-KR');
   if(code) fillFromCustomer(S.customers.find(c=>c.code===code));
 }
@@ -329,6 +382,23 @@ function fillFromCustomer(c){
   [['racket','racket'],['string','string'],['tension','tension']].forEach(([f,k])=>{if(!$('r-'+f).value.trim())$('r-'+f).value=last[k]||''});
   $('r-price').value=Number(last.price).toLocaleString('ko-KR');
 }
+// 추가 항목(범퍼 교체, 새 라켓 등): 이름 + 금액(0원이면 표시만)
+const num=v=>Number(String(v??'').replace(/[^\d]/g,''))||0;
+function addExtra(name='',amt=''){
+  const d=document.createElement('div');d.className='xrow';
+  d.innerHTML=`<input class="xn" placeholder="항목 (예: 범퍼 교체)" value="${esc(name)}"><input class="xa" inputmode="numeric" placeholder="금액" value="${amt?Number(amt).toLocaleString('ko-KR'):''}"><button type="button" class="x" aria-label="항목 삭제">✕</button>`;
+  d.querySelector('.x').onclick=()=>{d.remove();refreshForm()};
+  d.querySelectorAll('input').forEach(i=>i.addEventListener('input',refreshForm));
+  d.querySelector('.xa').addEventListener('blur',e=>{const n=num(e.target.value);e.target.value=n?n.toLocaleString('ko-KR'):''});
+  $('x-rows').appendChild(d);return d;
+}
+const getExtras=()=>[...$('x-rows').querySelectorAll('.xrow')].map(d=>({name:d.querySelector('.xn').value.trim(),amt:num(d.querySelector('.xa').value)})).filter(x=>x.name||x.amt);
+function refreshForm(){
+  const ex=getExtras(),add=ex.reduce((a,x)=>a+x.amt,0),p=num($('r-price').value);
+  $('x-total').textContent=won(p+add);$('x-sum').textContent=add?`합계 (기본 ${won(p)} + 추가 ${won(add)})`:'합계';
+  fbWarn();$('preview').textContent=buildText();markSaved(lastSig&&lastSig===formSig());
+}
+$('x-presets').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{const d=addExtra(b.dataset.x);(b.dataset.x?d.querySelector('.xa'):d.querySelector('.xn')).focus();refreshForm()});
 function recentVals(field){return [...new Set(S.receipts.map(r=>r[field]).filter(Boolean))]}
 function opts(field,saved){
   const cnt=new Map();S.receipts.forEach(r=>{const v=r[field];if(v)cnt.set(v,(cnt.get(v)||0)+1)});
@@ -355,20 +425,30 @@ function renderReceipt(){
   chips('c-tension',opts('tension',['48/46','46/44','45/43','44/42']),'r-tension');
   const prices=[...new Set([S.settings.price,...S.receipts.map(r=>r.price)])].slice(0,5);
   chips('c-price',prices.map(p=>({v:Number(p).toLocaleString('ko-KR'),label:won(p)})),'r-price');
-  $('preview').textContent=buildText();
+  refreshForm();
+}
+function receiptText(r,withFb){
+  const s=S.settings,L='ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ',ex=r.extras||[],total=r.total??r.price;
+  let t=`${s.acc} ${s.bank}\n${s.holder}\n\n${won(total)}\n${L}\n${dot(r.date)}\n\n`+
+    `성함 : ${r.name}\n라켓종류 : ${r.racket}\n스트링종류 : ${r.string}\n`+
+    `텐션 : ${r.tension}\n${r.hand?`주손 : ${r.hand}\n`:''}금액 : ${won(r.price)}\n`+
+    ex.map(x=>`추가 : ${x.name||'추가금'}${x.amt?' '+won(x.amt):''}\n`).join('')+
+    (total!==r.price?`합계 : ${won(total)}\n`:'')+L;
+  if(withFb){const u=r.code?fbUrl(r.code):fbUrl('NEWCODE').replace('NEWCODE','(저장 시 코드 발급)');if(u) t+=`\n후기 및 피드백 : ${u}`}
+  return t;
+}
+function formRecord(){
+  const ex=getExtras(),price=num($('r-price').value);
+  return {date:$('r-date').value,name:$('r-name').value.trim(),racket:$('r-racket').value.trim(),string:$('r-string').value.trim(),
+    tension:$('r-tension').value.trim(),hand:getHand(),price,extras:ex,total:price+ex.reduce((a,x)=>a+x.amt,0)};
 }
 function buildText(code){
-  const s=S.settings,name=$('r-name').value.trim(),c=matchCust();code=code||(c&&c.code);
-  const price=won($('r-price').value),L='ㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡㅡ';
-  let t=`${s.acc} ${s.bank}\n${s.holder}\n\n${price}\n${L}\n${dot($('r-date').value)}\n\n`+
-    `성함 : ${name}\n라켓종류 : ${$('r-racket').value.trim()}\n스트링종류 : ${$('r-string').value.trim()}\n`+
-    `텐션 : ${$('r-tension').value.trim()}\n${getHand()?`주손 : ${getHand()}\n`:''}금액 : ${price}\n${L}`;
-  if($('r-fb').checked){const u=code?fbUrl(code):fbUrl('NEWCODE').replace('NEWCODE','(저장 시 코드 발급)');if(u) t+=`\n후기 및 피드백 : ${u}`}
-  return t;
+  const c=matchCust(),r=formRecord();r.code=code||(c&&c.code)||'';
+  return receiptText(r,$('r-fb').checked);
 }
 $('r-fb').addEventListener('change',()=>{fbWarn();$('preview').textContent=buildText()});
 $('r-fbgo').onclick=()=>show('settings');
-['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',()=>{fbWarn();$('preview').textContent=buildText();markSaved(lastSig&&lastSig===formSig())}));
+['r-date','r-tension','r-price','r-fb'].forEach(id=>$(id).addEventListener('input',refreshForm));
 // 성함 입력 → 기존 고객이면 연락처 자동 선택
 $('r-name').addEventListener('input',()=>{
   const name=$('r-name').value.trim(),same=S.customers.filter(c=>c.name===name);
@@ -443,7 +523,7 @@ $('pk-bg').addEventListener('click',e=>{if(e.target.id==='pk-bg')closePicker()})
 
 // 같은 내용으로 이미 저장했으면 다시 저장하지 않음 (보내기→복사 눌러도 1건만 기록)
 let lastSig='',lastText='';
-const formSig=()=>JSON.stringify([...['date','name','phone','racket','string','tension','price'].map(k=>$('r-'+k).value.trim()),getHand(),$('r-fb').checked]);
+const formSig=()=>JSON.stringify([...['date','name','phone','racket','string','tension','price'].map(k=>$('r-'+k).value.trim()),getHand(),$('r-fb').checked,getExtras()]);
 function markSaved(on){$('r-saved').textContent=on?'✓ 저장된 접수입니다':''}
 function commit(){
   if(lastSig&&lastSig===formSig())return lastText;
@@ -453,8 +533,7 @@ function commit(){
   let c=matchCust(),isNew=false;
   if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
   else if(phone&&!c.phone) c.phone=phone;
-  const r={id:uid(),date:$('r-date').value,code:c.code,name,racket:$('r-racket').value.trim(),string:$('r-string').value.trim(),
-    tension:$('r-tension').value.trim(),hand:getHand(),price:Number($('r-price').value.replace(/[^\d]/g,''))||0};
+  const r=Object.assign({id:uid(),code:c.code,ts:Date.now(),paid:false,paidAt:'',delivered:false,deliveredAt:''},formRecord());
   c.last=r.date;if(r.hand)c.hand=r.hand;
   if(r.racket&&!S.rackets.includes(r.racket)) S.rackets.push(r.racket);
   if(r.string&&!S.strings.includes(r.string)) S.strings.push(r.string);
@@ -477,6 +556,44 @@ $('send').onclick=async()=>{
 };
 $('copy').onclick=async()=>{const t=commit();if(!t)return;await copyText(t);toast('복사 완료 (접수 저장됨)')};
 $('save').onclick=()=>{const was=lastSig&&lastSig===formSig();const t=commit();if(!t)return;toast(was?'이미 저장된 접수입니다':'접수가 저장되었습니다')};
+
+// ---------- 작업내역 ----------
+let wkFilter='all',wkLimit=50;
+const stamp=()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return `${ymd(d)} ${z(d.getHours())}:${z(d.getMinutes())}`};
+const sortKey=r=>r.ts||Date.parse(r.date)||0;
+function renderWork(){
+  const q=$('wk-q').value.trim().toLowerCase();
+  const F={all:()=>true,unpaid:r=>!r.paid,undeliv:r=>!r.delivered,open:r=>!r.paid||!r.delivered,done:r=>r.paid&&r.delivered};
+  const all=S.receipts.slice().sort((a,b)=>sortKey(b)-sortKey(a));
+  const L=all.filter(F[wkFilter]).filter(r=>!q||[r.name,r.racket,r.string,r.code].join(' ').toLowerCase().includes(q));
+  const up=all.filter(r=>!r.paid),ud=all.filter(r=>!r.delivered);
+  $('wk-sum').textContent=`정산 전 ${up.length}건 (${won(up.reduce((a,r)=>a+(r.total??r.price),0))}) · 전달 전 ${ud.length}건`;
+  $('wk-f').querySelectorAll('.chip').forEach(b=>b.classList.toggle('on',b.dataset.f===wkFilter));
+  $('wk-list').innerHTML=L.length?L.slice(0,wkLimit).map(r=>{
+    const ex=(r.extras||[]).map(x=>esc(x.name||'추가금')+(x.amt?' '+won(x.amt):'')).join(', ');
+    return `<div class="wk${r.paid&&r.delivered?' done':''}" data-id="${r.id}">
+      <div class="wk-h"><b>${esc(r.name)} <span class="code">${esc(r.code)}</span></b><time>${esc(dot(r.date))}</time></div>
+      <div class="wk-b">${esc(r.racket)} · ${esc(r.string)}${r.tension?' · '+esc(r.tension):''}${r.hand?' · '+esc(r.hand):''}</div>
+      ${ex?`<div class="wk-x">추가: ${ex}</div>`:''}
+      <div class="wk-h" style="margin-top:4px"><span class="wk-amt">${won(r.total??r.price)}</span><button type="button" class="wk-more" data-copy="1">접수증 다시 복사</button></div>
+      <div class="st">
+        <button type="button" data-k="paid" class="${r.paid?'ok':''}">${r.paid?'✓ 정산 완료':'정산 전'}<small>${r.paid?esc(r.paidAt):'눌러서 완료'}</small></button>
+        <button type="button" data-k="delivered" class="${r.delivered?'ok':''}">${r.delivered?'✓ 전달 완료':'전달 전'}<small>${r.delivered?esc(r.deliveredAt):'눌러서 완료'}</small></button>
+      </div></div>`}).join('')+(L.length>wkLimit?`<button class="btn ghost" id="wk-moreall">더 보기 (${L.length-wkLimit}건)</button>`:'')
+    :'<div class="empty">해당하는 작업이 없습니다</div>';
+  $('wk-list').querySelectorAll('.wk').forEach(card=>{
+    const r=S.receipts.find(x=>x.id===card.dataset.id);
+    card.querySelectorAll('.st button').forEach(b=>b.onclick=()=>{
+      const k=b.dataset.k;r[k]=!r[k];r[k+'At']=r[k]?stamp():'';save();
+      sync({type:'status',id:r.id,paid:r.paid,paidAt:r.paidAt,delivered:r.delivered,deliveredAt:r.deliveredAt});
+      toast(k==='paid'?(r.paid?'정산 완료':'정산 전으로 되돌림'):(r.delivered?'전달 완료':'전달 전으로 되돌림'));renderWork();
+    });
+    card.querySelector('[data-copy]').onclick=async()=>{await copyText(receiptText(r,true));toast('접수증 복사됨')};
+  });
+  if($('wk-moreall'))$('wk-moreall').onclick=()=>{wkLimit+=100;renderWork()};
+}
+$('wk-q').addEventListener('input',()=>{wkLimit=50;renderWork()});
+$('wk-f').querySelectorAll('.chip').forEach(b=>b.onclick=()=>{wkFilter=b.dataset.f;wkLimit=50;renderWork()});
 
 // ---------- 고객 ----------
 function renderCustomers(){
@@ -501,7 +618,7 @@ function renderCustomer(){
   const u=fbUrl(c.code);$('cd-fb').textContent=u||'설정에서 Apps Script URL을 입력하면 고객별 후기 링크가 만들어집니다.';
   const h=S.receipts.filter(r=>r.code===c.code);
   $('cd-hist').innerHTML='<h2>접수 내역 '+h.length+'건</h2>'+(h.length?h.map(r=>
-    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.price))}</b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}${r.hand?' / '+esc(r.hand):''}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
+    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.total??r.price))}<span class="badge${r.paid?' ok':''}">${r.paid?'정산완료':'정산전'}</span><span class="badge${r.delivered?' ok':''}">${r.delivered?'전달완료':'전달전'}</span></b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}${r.hand?' / '+esc(r.hand):''}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
   $('cd-hist').querySelectorAll('.x').forEach(b=>b.onclick=()=>{
     if(b.dataset.ok){S.receipts=S.receipts.filter(r=>r.id!==b.dataset.id);save();sync({type:'deleteReceipt',id:b.dataset.id});renderCustomer()}
     else{b.dataset.ok=1;b.textContent='한번 더'}});
