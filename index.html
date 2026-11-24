@@ -97,7 +97,7 @@ body.lock{overflow:hidden}
 .wk-b{color:var(--ink);font-size:15px;margin:6px 0 2px}
 .wk-x{color:var(--sub);font-size:14px}
 .wk-amt{font-weight:800;font-size:16px;white-space:nowrap}
-.st{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.st{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
 .st button{border:1px solid var(--line);background:#fff;border-radius:12px;min-height:50px;font:inherit;font-size:15px;font-weight:700;color:var(--sub);padding:6px}
 .st button small{display:block;font-weight:400;font-size:12px}
 .st button.ok{background:#1f9d55;border-color:#1f9d55;color:#fff}
@@ -202,6 +202,7 @@ body.lock{overflow:hidden}
   <div class="filters" id="wk-f">
     <button type="button" class="chip on" data-f="all">전체</button>
     <button type="button" class="chip" data-f="unpaid">정산 전</button>
+    <button type="button" class="chip" data-f="unworked">작업 전</button>
     <button type="button" class="chip" data-f="undeliv">전달 전</button>
     <button type="button" class="chip" data-f="open">진행 중</button>
     <button type="button" class="chip" data-f="done">모두 완료</button>
@@ -356,8 +357,8 @@ function renderHome(){
   const t=ymd(new Date()),n=S.receipts.filter(r=>r.date===t).length;
   $('todayCnt').textContent=n+'건';
   $('todayTxt').textContent='오늘 접수 · 고객 '+S.customers.length+'명';
-  const up=S.receipts.filter(r=>!r.paid).length,ud=S.receipts.filter(r=>!r.delivered).length;
-  $('homeWork').innerHTML=`정산 전 <b>${up}</b>건<br>전달 전 <b>${ud}</b>건`;
+  const up=S.receipts.filter(r=>!r.paid).length,uw=S.receipts.filter(r=>!r.worked).length,ud=S.receipts.filter(r=>!r.delivered).length;
+  $('homeWork').innerHTML=`정산 전 <b>${up}</b>건<br>작업 전 <b>${uw}</b>건<br>전달 전 <b>${ud}</b>건`;
 }
 
 // ---------- 접수증 ----------
@@ -542,7 +543,7 @@ function commit(){
   let c=matchCust(),isNew=false;
   if(!c){c={code:newCode(),name,phone,memo:'',created:ymd(new Date())};S.customers.push(c);isNew=true}
   else if(phone&&!c.phone) c.phone=phone;
-  const r=Object.assign({id:uid(),code:c.code,ts:Date.now(),paid:false,paidAt:'',delivered:false,deliveredAt:''},formRecord());
+  const r=Object.assign({id:uid(),code:c.code,ts:Date.now(),paid:false,paidAt:'',worked:false,workedAt:'',delivered:false,deliveredAt:''},formRecord());
   c.last=r.date;if(r.hand)c.hand=r.hand;
   if(r.racket&&!S.rackets.includes(r.racket)) S.rackets.push(r.racket);
   if(r.string&&!S.strings.includes(r.string)) S.strings.push(r.string);
@@ -580,7 +581,7 @@ function loadForEdit(r){
   $('r-racket').value=r.racket||'';$('r-string').value=r.string||'';$('r-tension').value=r.tension||'';setHand(r.hand||'');
   $('r-price').value=Number(r.price||0).toLocaleString('ko-KR');
   (r.extras||[]).forEach(x=>addExtra(x.name,x.amt));
-  $('e-info').textContent=`접수 ${dot(r.date)} · ${r.paid?'정산 완료':'정산 전'} · ${r.delivered?'전달 완료':'전달 전'} (상태는 그대로 유지됩니다)`;
+  $('e-info').textContent=`접수 ${dot(r.date)} · ${r.paid?'정산 완료':'정산 전'} · ${r.worked?'작업 완료':'작업 전'} · ${r.delivered?'전달 완료':'전달 전'} (상태는 그대로 유지됩니다)`;
 }
 function commitEdit(){
   const r=S.receipts.find(x=>x.id===editId);if(!r){toast('작업을 찾을 수 없습니다');return null}
@@ -616,11 +617,11 @@ const stamp=()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return `${ymd
 const sortKey=r=>r.ts||Date.parse(r.date)||0;
 function renderWork(){
   const q=$('wk-q').value.trim().toLowerCase();
-  const F={all:()=>true,unpaid:r=>!r.paid,undeliv:r=>!r.delivered,open:r=>!r.paid||!r.delivered,done:r=>r.paid&&r.delivered};
+  const F={all:()=>true,unpaid:r=>!r.paid,unworked:r=>!r.worked,undeliv:r=>!r.delivered,open:r=>!r.paid||!r.worked||!r.delivered,done:r=>r.paid&&r.worked&&r.delivered};
   const all=S.receipts.slice().sort((a,b)=>sortKey(b)-sortKey(a));
   const L=all.filter(F[wkFilter]).filter(r=>!q||[r.name,r.racket,r.string,r.code].join(' ').toLowerCase().includes(q));
   const up=all.filter(r=>!r.paid),ud=all.filter(r=>!r.delivered);
-  $('wk-sum').textContent=`정산 전 ${up.length}건 (${won(up.reduce((a,r)=>a+(r.total??r.price),0))}) · 전달 전 ${ud.length}건`;
+  $('wk-sum').textContent=`정산 전 ${up.length}건 (${won(up.reduce((a,r)=>a+(r.total??r.price),0))}) · 작업 전 ${all.filter(r=>!r.worked).length}건 · 전달 전 ${ud.length}건`;
   $('wk-f').querySelectorAll('.chip').forEach(b=>b.classList.toggle('on',b.dataset.f===wkFilter));
   $('wk-list').innerHTML=L.length?L.slice(0,wkLimit).map(r=>{
     const ex=(r.extras||[]).map(x=>esc(x.name||'추가금')+(x.amt?' '+won(x.amt):'')).join(', ');
@@ -630,16 +631,15 @@ function renderWork(){
       ${ex?`<div class="wk-x">추가: ${ex}</div>`:''}
       <div class="wk-h" style="margin-top:4px"><span class="wk-amt">${won(r.total??r.price)}</span><span><button type="button" class="wk-more" data-edit="1">✏ 수정</button> · <button type="button" class="wk-more" data-copy="1">접수증 복사</button></span></div>
       <div class="st">
-        <button type="button" data-k="paid" class="${r.paid?'ok':''}">${r.paid?'✓ 정산 완료':'정산 전'}<small>${r.paid?esc(r.paidAt):'눌러서 완료'}</small></button>
-        <button type="button" data-k="delivered" class="${r.delivered?'ok':''}">${r.delivered?'✓ 전달 완료':'전달 전'}<small>${r.delivered?esc(r.deliveredAt):'눌러서 완료'}</small></button>
+        ${[['paid','정산'],['worked','작업'],['delivered','전달']].map(([k,t])=>`<button type="button" data-k="${k}" class="${r[k]?'ok':''}">${r[k]?'✓ '+t+' 완료':t+' 전'}${r[k]?`<small>${esc(String(r[k+'At']||'').slice(5))}</small>`:''}</button>`).join('')}
       </div></div>`}).join('')+(L.length>wkLimit?`<button class="btn ghost" id="wk-moreall">더 보기 (${L.length-wkLimit}건)</button>`:'')
     :'<div class="empty">해당하는 작업이 없습니다</div>';
   $('wk-list').querySelectorAll('.wk').forEach(card=>{
     const r=S.receipts.find(x=>x.id===card.dataset.id);
     card.querySelectorAll('.st button').forEach(b=>b.onclick=()=>{
       const k=b.dataset.k;r[k]=!r[k];r[k+'At']=r[k]?stamp():'';save();
-      sync({type:'status',id:r.id,paid:r.paid,paidAt:r.paidAt,delivered:r.delivered,deliveredAt:r.deliveredAt});
-      toast(k==='paid'?(r.paid?'정산 완료':'정산 전으로 되돌림'):(r.delivered?'전달 완료':'전달 전으로 되돌림'));renderWork();
+      sync({type:'status',id:r.id,paid:r.paid,paidAt:r.paidAt,worked:!!r.worked,workedAt:r.workedAt||'',delivered:r.delivered,deliveredAt:r.deliveredAt});
+      {const t={paid:'정산',worked:'작업',delivered:'전달'}[k];toast(r[k]?t+' 완료':t+' 전으로 되돌림')}renderWork();
     });
     card.querySelector('[data-copy]').onclick=async()=>{await copyText(receiptText(r,true));toast('접수증 복사됨')};
     card.querySelector('[data-edit]').onclick=()=>{loadForEdit(r);show('receipt')};
@@ -672,7 +672,7 @@ function renderCustomer(){
   const u=fbUrl(c.code);$('cd-fb').textContent=u||'설정에서 Apps Script URL을 입력하면 고객별 후기 링크가 만들어집니다.';
   const h=S.receipts.filter(r=>r.code===c.code);
   $('cd-hist').innerHTML='<h2>접수 내역 '+h.length+'건</h2>'+(h.length?h.map(r=>
-    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.total??r.price))}<span class="badge${r.paid?' ok':''}">${r.paid?'정산완료':'정산전'}</span><span class="badge${r.delivered?' ok':''}">${r.delivered?'전달완료':'전달전'}</span></b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}${r.hand?' / '+esc(r.hand):''}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
+    `<div class="it"><div class="m"><b>${esc(dot(r.date))} · ${esc(won(r.total??r.price))}<span class="badge${r.paid?' ok':''}">${r.paid?'정산완료':'정산전'}</span><span class="badge${r.worked?' ok':''}">${r.worked?'작업완료':'작업전'}</span><span class="badge${r.delivered?' ok':''}">${r.delivered?'전달완료':'전달전'}</span></b><small>${esc(r.racket)} / ${esc(r.string)} / ${esc(r.tension)}${r.hand?' / '+esc(r.hand):''}</small></div><button class="x" data-id="${r.id}">삭제</button></div>`).join(''):'<div class="empty">내역 없음</div>');
   $('cd-hist').querySelectorAll('.x').forEach(b=>b.onclick=()=>{
     if(b.dataset.ok){S.receipts=S.receipts.filter(r=>r.id!==b.dataset.id);save();sync({type:'deleteReceipt',id:b.dataset.id});renderCustomer()}
     else{b.dataset.ok=1;b.textContent='한번 더'}});
